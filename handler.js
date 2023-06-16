@@ -30,44 +30,30 @@ async function makeAiRequestBody(content) {
   return JSON.stringify(payload);
 }
 
-function makeErrorBody(message, senderNick) {
+function makeErrorBody(message, receivedMessage) {
   return JSON.stringify({
     msgtype: 'text',
     text: {
-      content: `@${senderNick} \nSorry，出错了。 \n ${message}.`,
+      content: `@${receivedMessage.senderStaffId} \nSorry，出错了。 \n ${message}.`,
     },
+    at: {
+      atUserIds: [receivedMessage.senderStaffId],
+      isAtAll: false
+    }
   });
 }
 
 async function makeBody(aiRes, receivedMessage) {
-  // console.log('aiRes', await aiRes.text());
-  /*
-{
-  "id":"chatcmpl-8kHh96JktwPt6hWBUU8EfVslzPi8p",
-  "object":"chat.completion",
-  "created":1686828935,
-  "model":"gpt-3.5-turbo",
-  "usage":{
-    "prompt_tokens":0,
-    "completion_tokens":0,
-    "total_tokens":0
-  },
-  "choices":[{
-    "message":{
-      "role":"assistant",
-      "content":"你好！我是ChatGPT，很高兴能够与你交流。有什么我可以帮助你的吗？"
-    },
-    "finish_reason":"stop",
-    "index":0
-  }]
-}
-  */
   const aiResJson = await aiRes.json();
   return JSON.stringify({
     msgtype: 'markdown',
     markdown: {
-      title: 'answer',
-      text: `#### @${receivedMessage.senderNick} \n\n${aiResJson.choices[0].message.content}`,
+      title: `Robot @${receivedMessage.senderNick}`,
+      text: `@${receivedMessage.senderStaffId} \n\n${aiResJson.choices?.[0].message?.content}`,
+    },
+    at: {
+      atUserIds: [receivedMessage.senderStaffId],
+      isAtAll: false
     },
   });
 }
@@ -89,9 +75,10 @@ async function sendToDing(request) {
   const receivedMsg = request.body;
   let message = '';
 
+  // console.log('---- receivedMsg:', receivedMsg);
+
   try {
     const aiBody = await makeAiRequestBody(receivedMsg.text.content);
-
     const res = await fetch('https://ai.fakeopen.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -100,22 +87,23 @@ async function sendToDing(request) {
       },
       body: aiBody,
     });
-    
+
     if (!res.ok) {
-      message = makeErrorBody(`Resposne: ${res.status} ${await res.text()}`, receivedMsg.senderNick);
+      message = makeErrorBody(`Resposne: ${res.status} ${await res.text()}`, receivedMsg);
     } else {
-      // message = await makeBody(res, receivedMsg);
       message = await makeBody(res, receivedMsg);
     }
   } catch (error) {
-    message = makeErrorBody(`Request OpenAI failed: ${error.message}`, receivedMsg.senderNick);
+    message = makeErrorBody(`Request OpenAI failed: ${error.message}`, receivedMsg);
   }
 
-  const timestamp = Date.now();
-  const hookSign = sign(timestamp, process.env.D_HOOK_KEY);
-  const url = `${process.env.D_HOOK_URL}&timestamp=${timestamp}&sign=${hookSign}`
+  // const timestamp = Date.now();
+  // const hookSign = sign(timestamp, process.env.D_HOOK_KEY);
+  // const url = `${process.env.D_HOOK_URL}&timestamp=${timestamp}&sign=${hookSign}`
 
-  // console.log('---- msg:', message);
+  const url = 'https://oapi.dingtalk.com/robot/send?access_token=9e1e9c26fe55f3507fdf0d603582a4852d7fcd4f925b7cff773716b542ae307a';
+
+  // console.log('---- chatGPT msg:', message);
   const result = await fetch(url, {
     method: 'POST',
     headers: {
